@@ -76,9 +76,9 @@ type ModeTransitionRow = {
   coverageComplete: boolean;
 };
 type ActivityMixData = {
-  asOf: string;
+  asOf: string | null;
   unit: 'character';
-  period: { days: number; fromDay: string; throughDay: string };
+  period: { days: number; fromDay: string | null; throughDay: string | null };
   scope: 'recorded_sources_only';
   sources: ActivityModeRow[];
   union: { distinctObservedCharacters: number | null; fullyCovered: boolean; sourceIds: string[] };
@@ -108,6 +108,8 @@ function ActivityMixPanel(){
     <Warning>Only actual saved character observations count. A character seen in scenarios and open RvR on the same day counts once in the combined figure. Untracked PvE and missing days mean this is not a total game-login count. Stopping one activity is not game departure.</Warning>
     {loading?<Loading/>:!data?<EmptyData error={error}/>:data.scope!=='recorded_sources_only'||data.unit!=='character'
       ?<Warning>Unsupported data scope received. This screen cannot safely display account totals or claim server-wide completeness from this source.</Warning>
+      :data.asOf == null || data.period.fromDay == null || data.period.throughDay == null
+      ?<div className="empty-state planned"><span className="label-overline">Prepared report unavailable</span><h3>No current verified Activity Mix snapshot</h3><p>{data.notice || 'The latest complete UTC day has not been materialized. Older snapshots cannot be presented as current participation.'}</p></div>
       :<>
         <section className="panel">
           <h3>Tracked activity sources</h3>
