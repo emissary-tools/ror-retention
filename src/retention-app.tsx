@@ -61,6 +61,97 @@ function QualityPanel(){
   const {data,loading,error}=useReport<Capabilities>('/api/retention/capabilities');
   return <><section className="panel"><h3>Evidence standard</h3><dl className="key-values"><dt>Identity counted</dt><dd>Immutable character IDs, not unique players</dd><dt>Observation signal</dt><dd>Emissary's collected game events, mostly PvP and not a census of server sessions</dd><dt>PvE-only activity</dt><dd>Not currently verified in the retention model</dd><dt>Whole-game activity</dt><dd>Not certified until source/session coverage is established</dd><dt>Confirmed account logins</dt><dd>Not available</dd><dt>Timestamped historic progression</dt><dd>Not verified</dd><dt>Missing-data handling</dt><dd>Exclude from verified retention; never replace with zero</dd></dl></section>{loading?<Loading/>:!data?<EmptyData error={error}/>:<section className="panel"><h3>Feature readiness</h3><p><strong>Implemented observational contracts:</strong> {data.supported.join(', ')}</p><p><strong>Waiting for verified daily data or authorization:</strong> {data.planned.join(', ')}</p><Warning>These are capability declarations, not proof that collector backfills or login tracking are complete.</Warning></section>}</>;
 }
+type ActivityModeRow = {
+  sourceId: string; label: string; observedCharacters: number | null;
+  coveredDays: number | null; expectedDays: number | null;
+  lastCompleteDay: string | null; coverageComplete: boolean;
+  sourceStatus: string;
+};
+type ModeTransitionRow = {
+  fromMode: string; toMode: string;
+  observedCharacters: number;
+  eligibleCharacters: number | null;
+  coverageComplete: boolean;
+};
+type ActivityMixData = {
+  asOf: string;
+  unit: 'character';
+  period: { days: number; fromDay: string; throughDay: string };
+  scope: 'recorded_sources_only';
+  sources: ActivityModeRow[];
+  union: { distinctObservedCharacters: number | null; fullyCovered: boolean; sourceIds: string[] };
+  transitions: ModeTransitionRow[];
+  unavailableModes: string[];
+  notice: string;
+};
+function ActivityMixPanel(){
+  const [days,setDays]=useState(()=>{
+    const n=Number(new URLSearchParams(window.location.search).get('days'));
+    return [7,30,90].includes(n)?n:30;
+  });
+  const {data,loading,error}=useReport<ActivityMixData>(`/api/retention/activity-mix?days=${days}`);
+  return <>
+    <div className="toolbar">
+      <label htmlFor="activity-mix-window">Observed period</label>
+      <select id="activity-mix-window" value={days} onChange={e=>{
+        const next=Number(e.target.value);
+        setDays(next);
+        const url=new URL(window.location.href);
+        url.searchParams.set('days',String(next));
+        window.history.replaceState({},'',url);
+      }}>
+        <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+      </select>
+    </div>
+    <Warning>Only actual saved character observations count. A character seen in scenarios and open RvR on the same day counts once in the combined figure. Untracked PvE and missing days mean this is not a total game-login count. Stopping one activity is not game departure.</Warning>
+    {loading?<Loading/>:!data?<EmptyData error={error}/>:data.scope!=='recorded_sources_only'||data.unit!=='character'
+      ?<Warning>Unsupported data scope received. This screen cannot safely display account totals or claim server-wide completeness from this source.</Warning>
+      :<>
+        <section className="panel">
+          <h3>Tracked activity sources</h3>
+          <p>Time window: {data.period.fromDay} to {data.period.throughDay} (UTC). Unverified days are never treated as zero activity.</p>
+          <dl className="key-values">
+            <dt>Distinct observed characters in covered records</dt>
+            <dd>{formatNumber(data.union.distinctObservedCharacters)}</dd>
+            <dt>Coverage of all included sources</dt>
+            <dd>{data.union.fullyCovered?'Certified for the specified source set':'Incomplete or not certified'}</dd>
+            <dt>Sources included in union</dt>
+            <dd>{data.union.sourceIds.length?data.union.sourceIds.join(', '):'None certified'}</dd>
+          </dl>
+          <Warning>{data.notice || 'Observed gameplay events are not proof of game logins or unique accounts.'}</Warning>
+        </section>
+        <section className="panel table-panel">
+          <h3>Modes observed</h3>
+          <div className="table-scroller"><table>
+            <thead><tr><th>Recorded source</th><th>Observed characters</th><th>Verified days</th><th>Latest verified day</th><th>Evidence status</th></tr></thead>
+            <tbody>{data.sources.map(item=><tr key={item.sourceId}>
+              <td>{item.label}</td>
+              <td>{formatNumber(item.observedCharacters)}</td>
+              <td>{item.coveredDays==null||item.expectedDays==null?'Not verified':`${item.coveredDays} / ${item.expectedDays}`}</td>
+              <td>{item.lastCompleteDay||'Unknown'}</td>
+              <td>{item.coverageComplete?'Covered':item.sourceStatus||'Incomplete'}</td>
+            </tr>)}</tbody>
+          </table></div>
+          {!data.sources.length?<p>No verified activity sources have been published.</p>:null}
+        </section>
+        <section className="panel table-panel">
+          <h3>Observed activity transitions</h3>
+          <p>These are positive observations of participation in two different recorded modes, not proof of abandoning the first mode.</p>
+          <div className="table-scroller"><table>
+            <thead><tr><th>From</th><th>To</th><th>Observed characters</th><th>Eligible denominator</th></tr></thead>
+            <tbody>{data.transitions.map((item,i)=><tr key={`${item.fromMode}-${item.toMode}-${i}`}>
+              <td>{item.fromMode}</td><td>{item.toMode}</td>
+              <td>{formatNumber(item.observedCharacters)}</td>
+              <td>{item.coverageComplete?formatNumber(item.eligibleCharacters):'Not certified'}</td>
+            </tr>)}</tbody>
+          </table></div>
+          {!data.transitions.length?<p>Cross-mode transitions are not yet measurable from certified daily facts.</p>:null}
+        </section>
+        {data.unavailableModes.length?<Warning>Not yet tracked or verified: {data.unavailableModes.join(', ')}. These omissions limit conclusions about overall server play.</Warning>:null}
+        <DataStamp asOf={data.asOf}/>
+      </>}
+  </>;
+}
 function PlannedPanel({section}:{section:Section}){
   return <><div className="empty-state planned"><span className="label-overline">Measurement design ready</span><h3>Waiting for verified data pipeline</h3><p>{section.dataNeed ?? 'The required source and coverage audits must be completed before publishing measured results.'}</p></div><section className="panel"><h3>Metrics to be built</h3><div className="check-grid">{section.measures.map(m=><div className="metric-proposal" key={m}><span className="empty-dot" />{m}</div>)}</div></section></>;
 }
@@ -69,5 +160,5 @@ export function RetentionApp(){
   useEffect(()=>{const sync=()=>setActive(getTab());window.addEventListener('popstate',sync);return ()=>window.removeEventListener('popstate',sync);},[]);
   const change=(tab:TabId)=>{const url=new URL(window.location.href);if(tab==='overview')url.searchParams.delete('tab');else url.searchParams.set('tab',tab);window.history.pushState({},'',url);setActive(tab);window.scrollTo({top:0,behavior:'smooth'});};
   const section=SECTIONS.find(item=>item.id===active)??SECTIONS[0];
-  return <div className="app-shell"><aside className="sidebar"><a className="brand" href="/"><span className="brand-icon">E</span><span><b>THE EMISSARY</b><small>Development Intelligence</small></span></a><div className="sidebar-heading">RETENTION INTELLIGENCE</div><nav aria-label="Retention sections">{GROUPS.map(group=><div className="nav-group" key={group}><div className="nav-heading">{group}</div>{SECTIONS.filter(s=>s.group===group).map(item=><button key={item.id} type="button" className={`nav-item ${active===item.id?'selected':''}`} aria-current={active===item.id?'page':undefined} onClick={()=>change(item.id)}>{item.label}<span className={`small-indicator ${['overview','cohorts','journey','renown','quality'].includes(item.id)?'early':''}`}/></button>)}</div>)}</nav><div className="sidebar-bottom"><span className="status-dot"/> Pre-deployment development build <p>Observed character activity only.</p></div></aside><main className="main"><header className="topbar"><span>The Emissary</span><span className="topbar-separator">/</span><b>Retention Intelligence</b><span className="topbar-tag">Product preview</span></header><div className="content"><div className="page-heading"><div><span className="label-overline">{section.group.toUpperCase()}</span><h1>{section.label}</h1><p className="lead">{section.subtitle}</p></div><div className="data-badge">PARTIAL OBSERVATIONS, NOT LOGINS</div></div><section className="question-box"><div className="question-label">MANAGEMENT QUESTION</div><p>{section.question}</p></section>{active==='overview'?<OverviewPanel/>:active==='cohorts'?<CohortPanel/>:active==='journey'?<ProgressPanel rank={false}/>:active==='renown'?<ProgressPanel rank/>:active==='scenario-retention'?<ScenarioRetentionPanel/>:active==='scenario-experience'?<ScenarioExperiencePanel/>:active==='group-experience'?<ScenarioGroupsPanel/>:active==='quality'?<QualityPanel/>:<PlannedPanel section={section}/>}<footer><p><strong>Methodology:</strong> First observed is not the account creation date. Not observed is not confirmed departure. Latest-known progression is not verified progression at exit.</p><p>Project specification: <a href="https://github.com/emissary-tools/theemissary-router/blob/main/RETENTION_PRODUCT_SPEC.md" target="_blank" rel="noreferrer">Retention Intelligence blueprint</a></p></footer></div></main></div>;
+  return <div className="app-shell"><aside className="sidebar"><a className="brand" href="/"><span className="brand-icon">E</span><span><b>THE EMISSARY</b><small>Development Intelligence</small></span></a><div className="sidebar-heading">RETENTION INTELLIGENCE</div><nav aria-label="Retention sections">{GROUPS.map(group=><div className="nav-group" key={group}><div className="nav-heading">{group}</div>{SECTIONS.filter(s=>s.group===group).map(item=><button key={item.id} type="button" className={`nav-item ${active===item.id?'selected':''}`} aria-current={active===item.id?'page':undefined} onClick={()=>change(item.id)}>{item.label}<span className={`small-indicator ${['overview','cohorts','journey','renown','quality'].includes(item.id)?'early':''}`}/></button>)}</div>)}</nav><div className="sidebar-bottom"><span className="status-dot"/> Pre-deployment development build <p>Observed character activity only.</p></div></aside><main className="main"><header className="topbar"><span>The Emissary</span><span className="topbar-separator">/</span><b>Retention Intelligence</b><span className="topbar-tag">Product preview</span></header><div className="content"><div className="page-heading"><div><span className="label-overline">{section.group.toUpperCase()}</span><h1>{section.label}</h1><p className="lead">{section.subtitle}</p></div><div className="data-badge">PARTIAL OBSERVATIONS, NOT LOGINS</div></div><section className="question-box"><div className="question-label">MANAGEMENT QUESTION</div><p>{section.question}</p></section>{active==='overview'?<OverviewPanel/>:active==='cohorts'?<CohortPanel/>:active==='journey'?<ProgressPanel rank={false}/>:active==='renown'?<ProgressPanel rank/>:active==='scenario-retention'?<ScenarioRetentionPanel/>:active==='scenario-experience'?<ScenarioExperiencePanel/>:active==='group-experience'?<ScenarioGroupsPanel/>:active==='quality'?<QualityPanel/>:active==='activity-mix'?<ActivityMixPanel/>:<PlannedPanel section={section}/>}<footer><p><strong>Methodology:</strong> First observed is not the account creation date. Not observed is not confirmed departure. Latest-known progression is not verified progression at exit.</p><p>Project specification: <a href="https://github.com/emissary-tools/theemissary-router/blob/main/RETENTION_PRODUCT_SPEC.md" target="_blank" rel="noreferrer">Retention Intelligence blueprint</a></p></footer></div></main></div>;
 }
