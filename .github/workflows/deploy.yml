@@ -1,0 +1,73 @@
+name: Deploy Retention preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-retention-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/check-build-assets.mjs
+      - run: npm test
+      - name: Require authorized trevrcates Cloudflare deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Deployment not attempted: configure authorized CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository/org Actions secrets, or deploy once via Codex with the already-approved trevrcates Wrangler profile."
+            exit 1
+          fi
+      - name: Deploy independent static-assets Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+      - name: Verify live preview HTML and referenced JS/CSS
+        run: |
+          python3 - <<'PY'
+          import re, urllib.request, urllib.parse, time
+          origin = 'https://ror-retention.theemissary-router.workers.dev/'
+          last = None
+          for attempt in range(6):
+              try:
+                  with urllib.request.urlopen(origin, timeout=12) as response:
+                      if response.status != 200 or 'text/html' not in response.headers.get('content-type',''):
+                          raise RuntimeError('preview did not return valid HTML')
+                      html = response.read().decode('utf-8')
+                  refs = [u for u in re.findall(r'(?:src|href)=[\x22\x27]([^\x22\x27]+)[\x22\x27]', html)
+                          if re.search(r'\.(?:js|css)(?:\?|$)', u)]
+                  if not refs:
+                      raise RuntimeError('no JS/CSS references in preview HTML')
+                  for ref in refs:
+                      if not ref.startswith('./assets/'):
+                          raise RuntimeError('non-portable live asset reference: '+ref)
+                      url = urllib.parse.urljoin(origin, ref)
+                      with urllib.request.urlopen(url, timeout=12) as asset:
+                          data_type = asset.headers.get('content-type','')
+                          if asset.status != 200 or 'text/html' in data_type:
+                              raise RuntimeError('asset returned SPA HTML rather than JS/CSS: '+url)
+                  print('Preview HTML and',len(refs),'compiled assets verified at',origin)
+                  break
+              except Exception as exc:
+                  last = exc
+                  if attempt == 5: raise
+                  time.sleep(5)
+          PY
