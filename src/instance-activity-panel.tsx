@@ -19,12 +19,12 @@ interface InstanceRunRow {
   eligibleCharacters: number | null;
 }
 interface InstanceActivityReport {
-  asOf: string;
+  asOf: string | null;
   unit: 'character';
   mode: 'instance';
   scope: 'recorded_sources_only';
   definition: string;
-  period: { fromDay: string; throughDay: string; days: number };
+  period: { fromDay: string | null; throughDay: string | null; days: number };
   coverage: InstanceSourceCoverage;
   observedRuns: number | null;
   observedCharacters: number | null;
@@ -86,10 +86,18 @@ export function InstanceActivityPanel() {
           <span>Unsupported response scope. Account counts or unqualified full-server
             participation cannot be displayed here.</span>
         </div>
-      : <>
+      : data.coverage.status === 'not_imported' && data.observedRuns == null
+        ? <div className="empty-state planned">
+            <span className="label-overline">Import not finished</span>
+            <h3>Historical dungeon participation is not available yet</h3>
+            <p>The game exposes instance runs with character IDs, but
+              the recorded history has not been fully imported and verified.
+              No missing activity is being counted as zero.</p>
+          </div>
+        : <>
         <section className="panel">
           <h3>Recorded dungeon and instance activity</h3>
-          <p>{data.period.fromDay} to {data.period.throughDay}, UTC</p>
+          <p>{data.period.fromDay && data.period.throughDay ? `${data.period.fromDay} to ${data.period.throughDay}, UTC` : 'Observation window not yet verified'}</p>
           <dl className="key-values">
             <dt>Saved run import</dt>
             <dd>{data.coverage.savedRunImportFinished?'Finished for recorded crawl':'Incomplete or not started'}</dd>
@@ -131,7 +139,7 @@ export function InstanceActivityPanel() {
             </table>
           </div>
           {!data.instances.length ? <p>No sourced instance breakdown is available yet.</p> : null}
-          <p className="data-stamp">Report calculated: {data.asOf}. This timestamp does not certify source completeness.</p>
+          <p className="data-stamp">Report calculated: {data.asOf ?? 'Unavailable'}. A snapshot timestamp does not certify source completeness.</p>
         </section>
       </>}
   </>;
