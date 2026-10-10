@@ -29,10 +29,6 @@ export interface ObservedCohort { month: string; observedCohortSize: number; spa
 export interface Cohorts extends CommonMetadata { semantics: string; months: number; cohorts: ObservedCohort[] }
 export interface Progress extends CommonMetadata { semantics: string; inactiveDays: number; levelBands: {band: string; characters: number}[]; renownBands: {band: string; characters: number}[] }
 export interface Capabilities { unit: string; loginTracking: boolean; accountLinkage: boolean; sourceCoverageVerified: boolean; supported: string[]; planned: string[]; prerequisites: Record<string,string> }
-export interface ScenarioCoverage extends CommonMetadata { metric: string; firstScenarioDay: string | null; lastScenarioDay: string | null; lastCompleteDay: string | null; coveredDays: number; dailyRows: number; characters: number; backfillComplete: boolean; scenarioBootstrapComplete: boolean; leaderboardBackfillComplete: boolean; collectorLatestPoll: string | null; incompleteCurrentDay: boolean; gaps: string }
-export interface ScenarioReturnMetric { eligible: number; strict: number; strictPercent: number | null; returnOnOrAfter: number; returnOnOrAfterPercent: number | null }
-export interface ScenarioReturnCohort { cohortDay: string; cohortSize: number; returns: Record<string, ScenarioReturnMetric> }
-export interface ScenarioReturns extends CommonMetadata { metric: string; semantics: string; cohortWindowDays: number; coverage: ScenarioCoverage; cohorts: ScenarioReturnCohort[] }
 
 // The canonical Cloudflare router will proxy /api/retention to Ultra. The
 // app must never send RoR GraphQL requests itself.
@@ -57,4 +53,62 @@ export function useReport<T>(url: string | null) {
     return () => controller.abort();
   }, [url]);
   return state;
+}
+
+/**
+ * Contract proposed for Stage 1B Ultra materialization. Never infer missing
+ * return values as zero. Data must arrive with verified coverage explicitly.
+ */
+export interface ScenarioCoverage {
+  firstCoveredDay: string | null;
+  lastCompleteDay: string | null;
+  missingDays: number | null;
+  complete: boolean;
+}
+export interface ScenarioRetentionCohort {
+  month: string;
+  cohortCharacters: number;
+  eligibleCharacters: number;
+  returnedAnyScenario: number;
+  returnedSameMap: number | null;
+  returnedAnyPvP: number | null;
+}
+export interface ScenarioReturnReport extends CommonMetadata {
+  metric: 'scenario_return';
+  source: 'scenario_leaderboard_daily';
+  definition: string;
+  windowDays: number;
+  months: number;
+  coverage: ScenarioCoverage;
+  cohorts: ScenarioRetentionCohort[];
+}
+export interface ScenarioOutcomeRow {
+  key: string;
+  label: string;
+  exposedCharacters: number;
+  eligibleCharacters: number;
+  returnedCharacters: number;
+  sourceMatchCount: number;
+}
+export interface ScenarioOutcomeReport extends CommonMetadata {
+  metric: 'scenario_outcome_association';
+  definition: string;
+  comparisonWindow: string;
+  coverage: ScenarioCoverage;
+  outcomes: ScenarioOutcomeRow[];
+  maps: ScenarioOutcomeRow[];
+}
+export interface ScenarioGroupRow {
+  key: string;
+  label: string;
+  exposedCharacters: number;
+  eligibleCharacters: number;
+  returnedCharacters: number;
+}
+export interface ScenarioGroupReport extends CommonMetadata {
+  metric: 'scenario_group_association';
+  definition: string;
+  comparisonWindow: string;
+  coverage: ScenarioCoverage;
+  groups: ScenarioGroupRow[];
 }
