@@ -48,6 +48,9 @@ export function InstanceActivityPanel() {
   const {data, loading, error} = useReport<InstanceActivityReport>(`/api/retention/instance-activity?days=${days}`);
   const compatible = data?.unit === 'character' && data.mode === 'instance'
     && data.scope === 'recorded_sources_only';
+  const certifiedSourceDays = data?.coverage.missingDays == null
+    ? null
+    : Math.max(0, data.period.days - data.coverage.missingDays);
 
   return <>
     <div className="toolbar">
@@ -103,6 +106,8 @@ export function InstanceActivityPanel() {
             <dd>{data.coverage.savedRunImportFinished?'Finished for recorded crawl':'Incomplete or not started'}</dd>
             <dt>Independent source-window certification</dt>
             <dd>{data.coverage.sourceWindowCertified?'Certified for reported window':'Not certified'}</dd>
+            <dt>Source days with verified completeness</dt>
+            <dd>{certifiedSourceDays == null ? 'Unknown' : `${fmt(certifiedSourceDays)} of ${fmt(data.period.days)} days`}</dd>
             <dt>Most recent independently complete UTC day</dt>
             <dd>{data.coverage.lastCompleteDay ?? 'Unknown'}</dd>
             <dt>Saved source status</dt>
@@ -110,7 +115,7 @@ export function InstanceActivityPanel() {
           </dl>
           <div className="stats">
             <div className="stat-card"><div className="stat-title">Observed instance runs</div><strong>{fmt(data.observedRuns)}</strong><p>Saved positive observations, not all dungeon sessions</p></div>
-            <div className="stat-card"><div className="stat-title">Observed characters</div><strong>{fmt(data.observedCharacters)}</strong><p>Unique immutable character IDs associated with runs</p></div>
+            <div className="stat-card"><div className="stat-title">Observed characters</div><strong>{fmt(data.observedCharacters)}</strong><p>Distinct immutable characters in saved participant-day facts</p></div>
             <div className="stat-card"><div className="stat-title">Character-days</div><strong>{fmt(data.observedCharacterDays)}</strong><p>Deduplicated on run start day</p></div>
             <div className="stat-card"><div className="stat-title">Verified repeat participants</div><strong>{data.coverage.sourceWindowCertified?fmt(data.repeatedRunCharacters):'Not certified'}</strong><p>Requires complete comparable observation windows</p></div>
           </div>
