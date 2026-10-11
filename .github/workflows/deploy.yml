@@ -45,10 +45,15 @@ jobs:
           python3 - <<'PY'
           import re, urllib.request, urllib.parse, time
           origin = 'https://ror-retention.theemissary-router.workers.dev/'
+          # Cloudflare rejects urllib's default "Python-urllib" user agent
+          # with 403 even though the public page is available to browsers.
+          request_headers = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0 Safari/537.36'
+          }
           last = None
           for attempt in range(6):
               try:
-                  with urllib.request.urlopen(origin, timeout=12) as response:
+                  with urllib.request.urlopen(urllib.request.Request(origin, headers=request_headers), timeout=12) as response:
                       if response.status != 200 or 'text/html' not in response.headers.get('content-type',''):
                           raise RuntimeError('preview did not return valid HTML')
                       html = response.read().decode('utf-8')
@@ -60,7 +65,7 @@ jobs:
                       if not ref.startswith('./assets/'):
                           raise RuntimeError('non-portable live asset reference: '+ref)
                       url = urllib.parse.urljoin(origin, ref)
-                      with urllib.request.urlopen(url, timeout=12) as asset:
+                      with urllib.request.urlopen(urllib.request.Request(url, headers=request_headers), timeout=12) as asset:
                           data_type = asset.headers.get('content-type','')
                           if asset.status != 200 or 'text/html' in data_type:
                               raise RuntimeError('asset returned SPA HTML rather than JS/CSS: '+url)
