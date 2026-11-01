@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useReport } from './api';
+import { getCurrentRouteSearch, getCurrentRouteUrl } from './route-preferences';
 
 interface InstanceSourceCoverage {
   sourceWindowCertified: boolean;
@@ -42,7 +43,7 @@ const pct = (x: number|null|undefined) => x == null || !Number.isFinite(x)
 
 export function InstanceActivityPanel() {
   const [days,setDays] = useState(()=>{
-    const n = Number(new URLSearchParams(window.location.search).get('days'));
+    const n = Number(new URLSearchParams(getCurrentRouteSearch()).get('days'));
     return [7,30,90].includes(n) ? n : 30;
   });
   const {data, loading, error} = useReport<InstanceActivityReport>(`/api/retention/instance-activity?days=${days}`);
@@ -58,7 +59,7 @@ export function InstanceActivityPanel() {
       <select id="instance-observation-window" value={days} onChange={e=>{
         const next = Number(e.target.value);
         setDays(next);
-        const url = new URL(window.location.href);
+        const url = getCurrentRouteUrl();
         url.searchParams.set('days',String(next));
         window.history.replaceState({},'',url);
       }}>
